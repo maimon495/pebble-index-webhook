@@ -15,15 +15,19 @@
 
 import { isAuthorized } from "./auth";
 import { recordingKey } from "./dedupe";
-import { driveFileExists, driveUpload, getAccessToken, type ServiceAccountKey } from "./google";
+import { driveFileExists, driveUpload, getAccessToken } from "./google";
 
 export interface Env {
   /** Token the Pebble app sends in its Authorization header. */
   PEBBLE_AUTH_TOKEN: string;
-  /** Drive folder ID to upload into; must be shared with the service account. */
+  /** Drive folder ID to upload into (in the account that authorized GOOGLE_OAUTH_REFRESH_TOKEN). */
   DRIVE_FOLDER_ID: string;
-  /** Full service-account JSON key, as a string. */
-  GOOGLE_SERVICE_ACCOUNT_JSON: string;
+  /** OAuth client ID (Desktop app type) from Google Cloud Console. */
+  GOOGLE_OAUTH_CLIENT_ID: string;
+  /** OAuth client secret matching GOOGLE_OAUTH_CLIENT_ID. */
+  GOOGLE_OAUTH_CLIENT_SECRET: string;
+  /** Refresh token from the one-time authorization — see docs/google-drive-setup.md. */
+  GOOGLE_OAUTH_REFRESH_TOKEN: string;
 }
 
 // Far above any real voice memo (~1KB/min of speech), bounds what a leaked
@@ -60,9 +64,15 @@ export default {
       return json(405, { ok: false, error: "method not allowed; POST /index-webhook" });
     }
 
-    const missing = (["PEBBLE_AUTH_TOKEN", "DRIVE_FOLDER_ID", "GOOGLE_SERVICE_ACCOUNT_JSON"] as const).filter(
-      (name) => !env[name],
-    );
+    const missing = (
+      [
+        "PEBBLE_AUTH_TOKEN",
+        "DRIVE_FOLDER_ID",
+        "GOOGLE_OAUTH_CLIENT_ID",
+        "GOOGLE_OAUTH_CLIENT_SECRET",
+        "GOOGLE_OAUTH_REFRESH_TOKEN",
+      ] as const
+    ).filter((name) => !env[name]);
     if (missing.length > 0) {
       return json(500, { ok: false, error: `worker misconfigured: missing secrets ${missing.join(", ")}` });
     }
@@ -110,16 +120,13 @@ export default {
     const audioName = `${base}.m4a`;
     const textName = `${base}.txt`;
 
-    let serviceAccount: ServiceAccountKey;
-    try {
-      serviceAccount = JSON.parse(env.GOOGLE_SERVICE_ACCOUNT_JSON);
-    } catch {
-      return json(500, { ok: false, error: "worker misconfigured: GOOGLE_SERVICE_ACCOUNT_JSON is not valid JSON" });
-    }
-
     const started = Date.now();
     try {
-      const accessToken = await getAccessToken(serviceAccount);
+      const accessToken = await getAccessToken({
+        client_id: env.GOOGLE_OAUTH_CLIENT_ID,
+        client_secret: env.GOOGLE_OAUTH_CLIENT_SECRET,
+        refresh_token: env.GOOGLE_OAUTH_REFRESH_TOKEN,
+      });
 
       // Idempotency: a retried delivery (e.g. app retries on next recording
       // after our 5xx) must not create a duplicate file.

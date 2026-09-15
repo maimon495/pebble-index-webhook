@@ -4,10 +4,12 @@
 PEBBLE_AUTH_TOKEN=""
 
 # Google Drive folder to upload into (the ID from the folder's URL:
-# https://drive.google.com/drive/folders/<THIS PART>). Must be shared with the
-# service account's client_email as Editor.
+# https://drive.google.com/drive/folders/<THIS PART>). No sharing needed —
+# it's a folder in your own Drive, uploaded to via your own OAuth grant.
 DRIVE_FOLDER_ID=""
 
-# Full contents of the service account JSON key file, as a single-line string
-# (see docs/google-drive-setup.md for how to create it).
-GOOGLE_SERVICE_ACCOUNT_JSON=""
+# OAuth client (Desktop app type) + the refresh token from the one-time
+# authorization. See docs/google-drive-setup.md.
+GOOGLE_OAUTH_CLIENT_ID=""
+GOOGLE_OAUTH_CLIENT_SECRET=""
+GOOGLE_OAUTH_REFRESH_TOKEN=""

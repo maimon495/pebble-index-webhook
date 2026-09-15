@@ -1,44 +1,28 @@
 /**
  * Minimal Google Drive client for Cloudflare Workers: mints an access token
- * from a service-account key via the JWT bearer grant (RS256, signed with
- * Web Crypto — no Node APIs), then does a multipart upload.
+ * from a user OAuth refresh token, then does a multipart upload.
  *
- * Scope is drive.file (least privilege): the service account can only see
- * files/folders explicitly shared with it, which is exactly the "Pebble
- * Voice Notes" folder — see docs/google-drive-setup.md.
+ * A service account was tried first and doesn't work here: service accounts
+ * have zero storage quota on a personal (non-Workspace) Google account, so
+ * every file.create 403s with "Service Accounts do not have storage quota"
+ * even inside a folder explicitly shared with them — see
+ * docs/google-drive-setup.md. User OAuth creates files under the real
+ * account's own quota instead.
  */
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
-const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 const UPLOAD_URL = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id";
 const FILES_URL = "https://www.googleapis.com/drive/v3/files";
 
-export interface ServiceAccountKey {
-  client_email: string;
-  private_key: string;
+export interface OAuthCredentials {
+  client_id: string;
+  client_secret: string;
+  refresh_token: string;
 }
 
 const encoder = new TextEncoder();
 
-function base64url(input: string | ArrayBuffer): string {
-  const bytes = typeof input === "string" ? encoder.encode(input) : new Uint8Array(input);
-  let str = "";
-  for (const b of bytes) str += String.fromCharCode(b);
-  return btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-function pemToArrayBuffer(pem: string): ArrayBuffer {
-  const base64 = pem
-    .replace(/-----BEGIN PRIVATE KEY-----/, "")
-    .replace(/-----END PRIVATE KEY-----/, "")
-    .replace(/\s+/g, "");
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes.buffer;
-}
-
-// Cached in-isolate; Google tokens are valid for 1hr and re-minting per
+// Cached in-isolate; access tokens are valid for 1hr and re-minting per
 // request would double every webhook's latency for no benefit.
 let cachedToken: { value: string; expiresAt: number } | null = null;
 
@@ -47,44 +31,28 @@ export function resetTokenCacheForTests(): void {
   cachedToken = null;
 }
 
-export async function getAccessToken(key: ServiceAccountKey, now = Date.now()): Promise<string> {
+export async function getAccessToken(creds: OAuthCredentials, now = Date.now()): Promise<string> {
   if (cachedToken && cachedToken.expiresAt - 60_000 > now) {
     return cachedToken.value;
   }
-
-  const nowSec = Math.floor(now / 1000);
-  const header = base64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
-  const claim = base64url(
-    JSON.stringify({
-      iss: key.client_email,
-      scope: DRIVE_SCOPE,
-      aud: TOKEN_URL,
-      iat: nowSec,
-      exp: nowSec + 3600,
-    }),
-  );
-  const signingInput = `${header}.${claim}`;
-
-  const cryptoKey = await crypto.subtle.importKey(
-    "pkcs8",
-    pemToArrayBuffer(key.private_key),
-    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const signature = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", cryptoKey, encoder.encode(signingInput));
-  const jwt = `${signingInput}.${base64url(signature)}`;
 
   const resp = await fetch(TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-      assertion: jwt,
+      client_id: creds.client_id,
+      client_secret: creds.client_secret,
+      refresh_token: creds.refresh_token,
+      grant_type: "refresh_token",
     }),
   });
   if (!resp.ok) {
-    throw new Error(`google token exchange failed: ${resp.status}`);
+    // The consent screen is in "Testing" status (no hosted privacy policy to
+    // publish for a single-user tool), so Google expires this refresh token
+    // after 7 days — this is the expected failure mode when that happens.
+    // See docs/google-drive-setup.md for the re-authorization steps.
+    const detail = await resp.text().catch(() => "");
+    throw new Error(`google token exchange failed: ${resp.status} ${detail}`);
   }
   const data = (await resp.json()) as { access_token: string; expires_in: number };
   cachedToken = { value: data.access_token, expiresAt: now + data.expires_in * 1000 };
@@ -137,6 +105,9 @@ export async function driveUpload(
     body,
   });
   if (!resp.ok) {
-    throw new Error(`drive upload failed: ${resp.status}`);
+    // Google's structured error body (reason codes etc.) — safe to include,
+    // contains no user content.
+    const detail = await resp.text().catch(() => "");
+    throw new Error(`drive upload failed: ${resp.status} ${detail}`);
   }
 }

@@ -1,6 +1,6 @@
 import { cloudflareTest } from "@cloudflare/vitest-pool-workers";
 import { defineConfig } from "vitest/config";
-import { TEST_SERVICE_ACCOUNT_KEY } from "./test/fixtures";
+import { TEST_OAUTH_CREDENTIALS } from "./test/fixtures";
 
 export default defineConfig({
   plugins: [
@@ -10,7 +10,9 @@ export default defineConfig({
         bindings: {
           PEBBLE_AUTH_TOKEN: "test-pebble-token",
           DRIVE_FOLDER_ID: "test-folder-id",
-          GOOGLE_SERVICE_ACCOUNT_JSON: JSON.stringify(TEST_SERVICE_ACCOUNT_KEY),
+          GOOGLE_OAUTH_CLIENT_ID: TEST_OAUTH_CREDENTIALS.client_id,
+          GOOGLE_OAUTH_CLIENT_SECRET: TEST_OAUTH_CREDENTIALS.client_secret,
+          GOOGLE_OAUTH_REFRESH_TOKEN: TEST_OAUTH_CREDENTIALS.refresh_token,
         },
       },
     }),

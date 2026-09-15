@@ -25,7 +25,7 @@ The Pebble app's retry behavior depends on these status codes:
 | `X-Index-Test: true` (Send test event) | `200`, never filed as a note |
 | Neither `audio` nor `transcription` in the payload | `422` |
 | Transcription/audio over the size cap | `413` |
-| Worker misconfigured (missing secret, bad key JSON) | `500` |
+| Worker misconfigured (missing secret) | `500` |
 
 A failed upload is only retried when the ring records again — check the
 app's **Recent runs** list (Index 01 Settings → Webhook) as the delivery
@@ -33,9 +33,9 @@ source of truth, especially right after setup or if a note goes missing.
 
 ## One-time setup
 
-1. **Google Drive folder + service account** — follow
+1. **Google Cloud OAuth client + Drive folder** — follow
    [docs/google-drive-setup.md](docs/google-drive-setup.md). You'll end up
-   with a folder ID and a service-account JSON key.
+   with a client ID, client secret, refresh token, and a folder ID.
 2. **Generate the shared secret** the Pebble app will authenticate with:
    ```bash
    openssl rand -hex 32
@@ -49,10 +49,10 @@ source of truth, especially right after setup or if a note goes missing.
    ```bash
    npx wrangler secret put PEBBLE_AUTH_TOKEN
    npx wrangler secret put DRIVE_FOLDER_ID
-   npx wrangler secret put GOOGLE_SERVICE_ACCOUNT_JSON
+   npx wrangler secret put GOOGLE_OAUTH_CLIENT_ID
+   npx wrangler secret put GOOGLE_OAUTH_CLIENT_SECRET
+   npx wrangler secret put GOOGLE_OAUTH_REFRESH_TOKEN
    ```
-   `GOOGLE_SERVICE_ACCOUNT_JSON` is the *entire contents* of the service
-   account key file, pasted as one line (`cat key.json | pbcopy` and paste).
 5. **Deploy:**
    ```bash
    npm run deploy
@@ -96,10 +96,20 @@ If `PEBBLE_AUTH_TOKEN` ever leaks (committed by mistake, shared in a screenshot,
 The app's webhook settings are the *only* other place the secret lives —
 there's no third system to update.
 
-If the service-account key is ever exposed, delete it in the Google Cloud
-Console (IAM & Admin → Service Accounts → Keys) and create a new one, then
-`wrangler secret put GOOGLE_SERVICE_ACCOUNT_JSON` with the new key. The old
-key stops working the moment it's deleted server-side.
+**The Drive refresh token expires every 7 days** — this consent screen is
+in Testing status (see docs/google-drive-setup.md for why), and that's the
+cap Google puts on Testing-status refresh tokens regardless of activity.
+Watch for `invalid_grant` in `wrangler tail`; when it happens:
+```bash
+node scripts/authorize-google.mjs <client_id> <client_secret>
+npx wrangler secret put GOOGLE_OAUTH_REFRESH_TOKEN
+```
+The client ID/secret don't need to change.
+
+If the OAuth client secret is ever exposed, delete the client in Google
+Cloud Console (Google Auth Platform → Clients) and create a new one, then
+re-run the authorization script and update all three
+`GOOGLE_OAUTH_*` secrets.
 
 ## Re-pointing at a new Worker URL
 
@@ -114,14 +124,20 @@ header and payload mode carry over.
   for transcription-only payloads. Files are named `<recordedAt>_<key>.m4a` /
   `.txt`. Before uploading, the Worker checks Drive for an existing file with
   that name — a retried delivery after a `502` is a no-op, not a duplicate.
-- **Access token caching**: the service-account access token is cached
-  in-isolate for its ~1hr lifetime instead of re-minted per request.
+- **Access token caching**: the Drive access token is cached in-isolate for
+  its ~1hr lifetime instead of re-minted per request.
 - **Never logs transcription contents** — only event name, dedupe key, and
   latency. Transcription size is capped (64K chars) and audio size is capped
   (25MB) so a leaked token can't be used to push arbitrarily large payloads
   through the Worker.
-- **`drive.file` scope** (least privilege): the service account can only see
-  what's explicitly shared with it, i.e. exactly the one folder.
+- **User OAuth, not a service account**: a service account was the first
+  design and doesn't work on a personal (non-Workspace) Google account —
+  service accounts have zero storage quota, so every upload 403s with
+  "Service Accounts do not have storage quota" even inside a folder shared
+  with them as Editor. User OAuth creates files under your own account's
+  quota instead. The tradeoff is the 7-day refresh-token expiry above,
+  since publishing the consent screen to avoid it needs a hosted privacy
+  policy this personal tool doesn't have.
 
 ## What still needs a human
 
