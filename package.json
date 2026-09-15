@@ -1,0 +1,22 @@
+{
+  "name": "pebble-index-webhook",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Worker receiver for the Pebble Index 01 ring's native webhook — persists voice notes (audio + transcription) to Google Drive",
+  "license": "MIT",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "check": "tsc --noEmit",
+    "secrets:list": "wrangler secret list"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
+    "@cloudflare/workers-types": "^5.20260823.1",
+    "typescript": "^5.7.3",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.125.0"
+  }
+}

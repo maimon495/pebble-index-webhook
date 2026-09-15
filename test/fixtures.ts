@@ -1,0 +1,32 @@
+// Throwaway RSA keypair generated locally for unit tests only — never a real credential.
+export const TEST_SERVICE_ACCOUNT_KEY = {
+  client_email: "test-service-account@test-project.iam.gserviceaccount.com",
+  private_key: `-----BEGIN PRIVATE KEY-----
+MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQDXE22s4fX5F2WP
+LTyfP8rkupHFiyriR2/R8y+nryNATX6kRVJXx3/7nVXCd3Njkf/sCaTkev+rd618
+/2qbdAYI78SHOisFtPOTz76kuVh7OgFr5WuxrVqKe2YPzGTJTZgwMzd+dxkrHHRg
+qt/Cx6b4nle6hPaKr9yLm0uMYpk9swHH0MoRgjjNs0QcJ3Dc5VWNlo0WGqUqoarm
+ePjp8VwlVX6hGHhNo7Lx+a1qP8ISjw6DQmQ9OTEjycoAJKLKAKcs7x/rdr1nsaVb
+1G8ybBt0H9dfvBQjfPQ4TrAiYrgIn2WGP7p0NVfWmEoS6RhW/DLxydkD9zP+0dEh
+1gFhTeGLAgMBAAECggEAB2FyTRGACGlGIfCyeOCOjOTeJcJN2XAMJU9MHlwDQKyo
+IOkEF2EQQkk27TJ+MjeLacU29GRIK9EykeyN8wG7R0k7HEzhtxNrnHHvn+WAZNIr
+xFEeLf298qyjZv1jpAjWpSjMybk6kuEqGTsj7KI/V57PceYoM8AvOFc+83VavuQ6
+mnx/s+Ig7iy9wsKz4DqmcUup4upD+DVXlmduHsD+EIHB9qFMP4wUJlKF3rF3UKpZ
+RY5x9jn98NrAm/R64b7dtdJvCrA7NIF6T0ikj4BEIxBgNamOmjHYbstNCosta2uF
+dMSNp3S5ByldEx4RBoT0u/Co4/2OVqO++/PB7B/GWQKBgQDwIBs91GCDinVaVJ4o
+M1MqXkBv9IrI+mjdpQEmjKX7rKj6SDXXAd6saGrIpsqaWj32TFCdWaGKZ4fFEzkw
+hLQDZ1qSJbfYwUiXcTLNbpjo52jdGud/QX8lJ+Qr+rEAWhhHhYYBzd3kruuhP7mG
+YvN40GEDVR6Ax0UvHgWgdWectQKBgQDlS2H57QQFIrlsn/wtlDmlyMPS2WCibGbP
+yfI9zCaEYmI/UrV0PNImejqGYAwXMy0EpZ4q+0Yhktv56txTZcTniQHYM8lgo5nL
+PYD7GpT5e+xyIDRH9oscvHDozAmY4U1Odfe1sG3uySb/geVzm7SUPMwcwHBlVgu1
+SUdX8UitPwKBgBbfyBiMuaDuOJ2hP+uub/ayQcsobWwVxpWOmVx1u34NBY/J/y77
+I54i2EFC+jvX6t0iie9jUWsgz6MrYKBJk+hbGRqg8zF3wBWFGATPy0sseCXP4UuT
+DqyYbzjtSZ0x9+wgQRK87K1TKGkU6/RsSqswln09x4kW8nU5k+mkJXmdAoGAGe3L
+V4rQ4I/LrhftWW4gkrnAQzCnt9ZQTgEFLq3OUTwa5hRBRrK2BPnfcmCcHWeBGLxt
+xWiCxrsnuvwvDBM/D/uzRLKefBokAxKiakLYQ9oao9E2eEjN9GLu1bR1BV+88Tlv
+2JDp7Y27pjsXKlqaMgUqA7pTO3JegpKVycEUOdsCgYBmvJYbPfSOVnIY7ZtmXAU3
+OwiZMnfBYa+7n5kpDLFOMPcrBgmwXuIY9gI+V6aZ5Um9KpEX7IRjKu6kRG/d8L81
+ngzBy8x81/h7WjbAzjTZ9R9+59nIxC7N/XReUTCvOjGsDt+Sp0sF0G2svw5HiiWC
+tVScWmdB/Up0eirNbogw8g==
+-----END PRIVATE KEY-----`,
+};
