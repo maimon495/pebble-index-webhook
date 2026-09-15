@@ -1,17 +1,27 @@
 # pebble-index-webhook
 
-Cloudflare Worker that receives the Pebble Index 01 ring's native webhook
-(configured in the Pebble app under Index 01 Settings → Webhook) and persists
-each voice note — audio and/or transcription — to a Google Drive folder.
+A small Cloudflare Worker that turns voice notes recorded on a [Pebble Index
+01](https://ring.pebble.com/) ring into files in Google Drive, automatically
+— no phone automations, no polling, no app fork.
+
+The Pebble app already has a first-party webhook feature (Index 01 Settings
+→ Webhook) that most people don't know about: it can POST each recording's
+audio and/or transcription to any HTTP endpoint you configure, per gesture.
+This repo is that endpoint — deploy it once, point the app at it, and every
+recording lands in a Drive folder within seconds, with no manual step in
+between.
 
 ```
 Ring --BLE--> Pebble app (transcribes, fires webhook) --POST--> this Worker --> Google Drive
 ```
 
-No Shortcuts automation, no app fork. See the Pebble app repo's
+See the Pebble app repo's
 `experimental/src/commonMain/kotlin/coredevices/ring/external/indexwebhook/INDEX_WEBHOOK_API.md`
 for the upstream API this implements — that's the source of truth for the
 request format; this README covers deploying and operating the receiver.
+The auth/multipart-handling pattern was adapted from
+[zmh/hermes-pebble-index-01-smart-ring](https://github.com/zmh/hermes-pebble-index-01-smart-ring),
+a similar bridge for a different downstream target.
 
 ## Response contract
 
@@ -155,9 +165,9 @@ header and payload mode carry over.
   (full Google verification is out of scope for this), which only affects
   the one-time authorization screen, not ongoing token refresh.
 
-## What still needs a human
+## What's out of scope
 
-- Linking the Drive folder ID and secret rotation live only in this repo's
-  docs and the Pebble app's settings — nothing else to keep in sync.
-- Mycroft's Drive-polling cron is out of scope for this repo; hand off the
-  folder ID once it's created.
+This repo only covers getting recordings into Drive reliably. What happens
+to them after that — polling the folder, transcribing further, filing
+to-dos, whatever — is a separate concern with its own setup; hand it the
+Drive folder ID once this is running.
