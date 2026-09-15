@@ -88,6 +88,14 @@ describe("routing", () => {
     expect(res.status).toBe(200);
   });
 
+  it("serves the home, privacy, and terms pages (required for the OAuth consent screen)", async () => {
+    for (const path of ["/", "/privacy", "/terms"]) {
+      const res = await SELF.fetch(`${WORKER}${path}`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Content-Type")).toContain("text/html");
+    }
+  });
+
   it("404s unknown paths", async () => {
     const res = await SELF.fetch(`${WORKER}/nope`, { method: "POST" });
     expect(res.status).toBe(404);

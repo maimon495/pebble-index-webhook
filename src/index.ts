@@ -50,10 +50,54 @@ function isTestEvent(request: Request, form: FormData): boolean {
   return form.get("test") === "true";
 }
 
+function html(body: string): Response {
+  return new Response(body, { headers: { "Content-Type": "text/html; charset=UTF-8" } });
+}
+
+// Static pages exist only so the Google OAuth consent screen can be
+// published to Production (it requires a home page / privacy policy /
+// terms link) — this Worker has no other public-facing purpose.
+const HOME_PAGE = `<!doctype html><meta charset="utf-8"><title>Pebble Index Webhook</title>
+<h1>Pebble Index Webhook</h1>
+<p>A private, single-user integration that receives voice-note webhooks from
+one person's Pebble Index 01 ring and saves them to that same person's own
+Google Drive. It is not a public product, has no other users, and accepts
+no sign-ups.</p>
+<p><a href="/privacy">Privacy policy</a> &middot; <a href="/terms">Terms of service</a></p>`;
+
+const PRIVACY_PAGE = `<!doctype html><meta charset="utf-8"><title>Privacy Policy — Pebble Index Webhook</title>
+<h1>Privacy Policy</h1>
+<p>This service is a personal integration built and operated by one individual
+for their own use. It is not offered to the public.</p>
+<p>It receives audio and/or text transcriptions POSTed from that individual's
+own Pebble Index 01 ring/app, and writes them directly to that same
+individual's own Google Drive, using a Google OAuth grant that individual
+gave to their own Google Cloud project. No data is shared with, sold to, or
+processed by any third party. No data is retained by this service itself —
+each request is written to Drive and the request is discarded; nothing is
+logged except an event name, a non-reversible dedupe key, and timing, never
+the transcription or audio content (see the source at the project's git
+repository).</p>`;
+
+const TERMS_PAGE = `<!doctype html><meta charset="utf-8"><title>Terms of Service — Pebble Index Webhook</title>
+<h1>Terms of Service</h1>
+<p>This service has a single authorized user and is not available for
+general use, registration, or sign-up. It is provided as-is, with no
+uptime or support guarantees, for that one person's personal use only.</p>`;
+
 export default {
   async fetch(request, env): Promise<Response> {
     const url = new URL(request.url);
 
+    if (url.pathname === "/") {
+      return html(HOME_PAGE);
+    }
+    if (url.pathname === "/privacy") {
+      return html(PRIVACY_PAGE);
+    }
+    if (url.pathname === "/terms") {
+      return html(TERMS_PAGE);
+    }
     if (url.pathname === "/health") {
       return json(200, { ok: true });
     }
