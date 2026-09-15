@@ -36,18 +36,25 @@ Console → **Google Auth Platform** → Get started:
 - Contact information: your email
 - Create
 
-Leave publishing status as **Testing** unless you're willing to host a
-privacy policy / terms-of-service page (required to publish to Production).
-Testing mode has one real cost: **the refresh token expires after 7 days**
-of inactivity from the token being minted... actually, more precisely,
-Google caps refresh token lifetime for Testing-status apps regardless of
-use. When it expires, uploads start failing with `401`/`invalid_grant` in
-`wrangler tail`, and re-running the authorization script (§5 below) fixes
-it in under a minute.
+On the **Audience** page, under **Test users**, click **Add users** and add
+your own Google account email — without this the consent screen refuses to
+authorize you at all, even in Testing status.
 
-Then, on the **Audience** page, under **Test users**, click **Add users**
-and add your own Google account email. Without this, the consent screen
-will refuse to authorize you at all.
+**Publish it to Production** once you have at least one test user added:
+Audience page → **Publish app** → Confirm. Testing-status apps get a
+refresh token capped at 7 days regardless of activity; Production removes
+that cap. Publishing normally requires a hosted home page / privacy policy /
+terms link, which is why this repo's Worker serves `/`, `/privacy`, and
+`/terms` itself (see `src/index.ts`) — point the Branding page's "App
+domain" fields at those three URLs (`https://<your-worker>.workers.dev/`,
+`/privacy`, `/terms`) and add the Worker's `workers.dev` subdomain under
+**Authorized domains** before Publish app will enable.
+
+Because the `drive` scope is "restricted," publishing doesn't remove the
+"Google hasn't verified this app" warning — only full Google verification
+does, which isn't worth pursuing for a single-user personal tool. You'll
+still see it once at each authorization (click Advanced → Go to [app]
+(unsafe)); it doesn't affect ongoing token refresh once authorized.
 
 ## 4. Create an OAuth client
 
@@ -84,11 +91,16 @@ npx wrangler secret put GOOGLE_OAUTH_REFRESH_TOKEN
 npx wrangler secret put DRIVE_FOLDER_ID
 ```
 
-## Re-authorizing when the refresh token expires
+## Re-authorizing if the refresh token is ever revoked
 
-Watch for `google token exchange failed: 400` /
-`invalid_grant` in `wrangler tail` or Cloudflare's Worker logs — that's the
-7-day Testing-mode expiry. Fix:
+With the consent screen published, this shouldn't happen on a fixed
+schedule anymore — but Google can still drop a refresh token if it goes
+unused for 6 months, on a Google account password/security change, if you
+exceed 50 refresh tokens issued for this client+account (oldest is silently
+invalidated), or if you manually revoke access at
+[myaccount.google.com/permissions](https://myaccount.google.com/permissions).
+Watch for `google token exchange failed: 400` / `invalid_grant` in
+`wrangler tail` or Cloudflare's Worker logs. Fix:
 
 ```bash
 node scripts/authorize-google.mjs <client_id> <client_secret>

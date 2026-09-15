@@ -96,15 +96,25 @@ If `PEBBLE_AUTH_TOKEN` ever leaks (committed by mistake, shared in a screenshot,
 The app's webhook settings are the *only* other place the secret lives —
 there's no third system to update.
 
-**The Drive refresh token expires every 7 days** — this consent screen is
-in Testing status (see docs/google-drive-setup.md for why), and that's the
-cap Google puts on Testing-status refresh tokens regardless of activity.
-Watch for `invalid_grant` in `wrangler tail`; when it happens:
+**The Drive refresh token can still expire or get revoked** (Google drops
+tokens unused for 6 months, on a password/security change, if you exceed
+50 refresh tokens issued for one client+account — oldest is silently
+invalidated — or if you revoke access yourself at
+[myaccount.google.com/permissions](https://myaccount.google.com/permissions)).
+The consent screen is published to Production (see
+docs/google-drive-setup.md), which removes the 7-day Testing-status cap
+that applied before, but re-authorization is still a documented fallback,
+not something that should be needed routinely. Watch for `invalid_grant` in
+`wrangler tail`; when it happens:
 ```bash
 node scripts/authorize-google.mjs <client_id> <client_secret>
 npx wrangler secret put GOOGLE_OAUTH_REFRESH_TOKEN
 ```
-The client ID/secret don't need to change.
+The client ID/secret don't need to change. You'll see a one-time "Google
+hasn't verified this app" warning during re-authorization (click Advanced →
+Go to Pebble Index Webhook (unsafe)) — that's because the `drive` scope is
+"restricted" and removing the warning requires full Google verification,
+which isn't worth pursuing for a single-user personal tool.
 
 If the OAuth client secret is ever exposed, delete the client in Google
 Cloud Console (Google Auth Platform → Clients) and create a new one, then
@@ -135,9 +145,15 @@ header and payload mode carry over.
   service accounts have zero storage quota, so every upload 403s with
   "Service Accounts do not have storage quota" even inside a folder shared
   with them as Editor. User OAuth creates files under your own account's
-  quota instead. The tradeoff is the 7-day refresh-token expiry above,
-  since publishing the consent screen to avoid it needs a hosted privacy
-  policy this personal tool doesn't have.
+  quota instead.
+- **Consent screen publishing**: the OAuth consent screen is published to
+  Production. Publishing needs a home page / privacy policy / terms link —
+  rather than standing up a separate site for that, `/`, `/privacy`, and
+  `/terms` are served directly by this Worker (see `HOME_PAGE`,
+  `PRIVACY_PAGE`, `TERMS_PAGE` in `src/index.ts`), truthfully describing a
+  single-user personal tool. The app remains functionally "unverified"
+  (full Google verification is out of scope for this), which only affects
+  the one-time authorization screen, not ongoing token refresh.
 
 ## What still needs a human
 
