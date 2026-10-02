@@ -5,5 +5,12 @@
   "compatibility_date": "2026-08-01",
   "observability": {
     "enabled": true
-  }
+  },
+  // Recent-notes feed served by GET /notes (see src/notes.ts). Not a secret.
+  "kv_namespaces": [
+    {
+      "binding": "NOTES_KV",
+      "id": "26382199e1854517b21d26759c049717"
+    }
+  ]
 }

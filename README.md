@@ -137,6 +137,37 @@ If you ever redeploy under a new name/subdomain, the only change needed on
 the Pebble side is the webhook URL in Index 01 Settings → Webhook — the auth
 header and payload mode carry over.
 
+## Polling for new notes (`GET /notes`)
+
+Every persisted note is also copied into a Workers KV feed for 7 days, so an
+assistant can pick up new notes with one cheap request instead of listing
+the Drive folder. Drive stays the source of truth; a KV failure never fails
+the webhook.
+
+```bash
+curl -s -H "Authorization: Bearer $POLL_TOKEN" \
+  "https://pebble-index-webhook.<your-subdomain>.workers.dev/notes?since=$CURSOR"
+```
+
+Returns `{ ok, notes, cursor, more }`: notes received after `since`, oldest
+first, each with `key`, `recordedAtMs`, `receivedAt`, `transcription`,
+`audioName`, `textName`. Store `cursor` and pass it as `since` next time
+(start with `0`); if `more` is true, poll again right away. `401` on a bad
+token, `400` on a non-numeric `since`. The feed is keyed on the dedupe key,
+so retried deliveries never show up twice. KV reads are eventually
+consistent (up to ~60s), so a poller that wants to be safe can poll with
+`since = cursor - 120000` and skip keys it has already seen.
+
+One-time setup (the webhook keeps working without it — notes just aren't
+added to the feed):
+
+```bash
+npx wrangler kv namespace create NOTES_KV   # add the printed id under kv_namespaces in wrangler.jsonc
+openssl rand -hex 32                        # the poll token; keep it separate from PEBBLE_AUTH_TOKEN
+npx wrangler secret put POLL_TOKEN
+npm run deploy
+```
+
 ## Design notes
 
 - **Dedupe key**: the `recordingId` embedded in the audio filename

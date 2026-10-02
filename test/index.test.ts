@@ -243,6 +243,125 @@ describe("persistence", () => {
   });
 });
 
+const POLL = "test-poll-token";
+
+interface NotesBody {
+  ok: boolean;
+  notes: { key: string; transcription: string | null; audioName: string | null; textName: string | null }[];
+  cursor: number;
+  more: boolean;
+}
+
+function poll(since: number | string, headers: Record<string, string> = { Authorization: `Bearer ${POLL}` }) {
+  return SELF.fetch(`${WORKER}/notes?since=${since}`, { headers });
+}
+
+describe("notes feed", () => {
+  it("401s without the poll token", async () => {
+    const res = await poll(0, {});
+    expect(res.status).toBe(401);
+  });
+
+  it("401s with the Pebble token instead of the poll token", async () => {
+    const res = await poll(0, { Authorization: `Bearer ${AUTH}` });
+    expect(res.status).toBe(401);
+  });
+
+  it("400s on a non-numeric since", async () => {
+    const res = await poll("yesterday");
+    expect(res.status).toBe(400);
+  });
+
+  it("405s non-GET on /notes", async () => {
+    const res = await SELF.fetch(`${WORKER}/notes`, { method: "POST", headers: { Authorization: `Bearer ${POLL}` } });
+    expect(res.status).toBe(405);
+  });
+
+  it("returns no notes and the same cursor when nothing is newer", async () => {
+    const future = Date.now() + 60_000;
+    const res = await poll(future);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    const body = (await res.json()) as NotesBody;
+    expect(body.notes).toEqual([]);
+    expect(body.cursor).toBe(future);
+    expect(body.more).toBe(false);
+  });
+
+  it("serves a persisted note, then nothing new from its cursor", async () => {
+    mockGoogle();
+    const since = Date.now() - 1;
+    await post(
+      pebbleForm({
+        audio: { filename: "rec-feed1.m4a", content: "fake-audio-bytes", type: "audio/mp4" },
+        transcription: "buy oat milk",
+        recordedAt: "1700000000000",
+      }),
+    );
+
+    const body = (await (await poll(since)).json()) as NotesBody;
+    const note = body.notes.find((n) => n.key === "rec-feed1");
+    expect(note).toMatchObject({
+      transcription: "buy oat milk",
+      audioName: "1700000000000_rec-feed1.m4a",
+      textName: "1700000000000_rec-feed1.txt",
+    });
+
+    const next = (await (await poll(body.cursor)).json()) as NotesBody;
+    expect(next.notes.find((n) => n.key === "rec-feed1")).toBeUndefined();
+  });
+
+  it("keeps every note between polls, not just the latest", async () => {
+    mockGoogle();
+    const since = Date.now() - 1;
+    await post(pebbleForm({ transcription: "first of two", recordedAt: "1700000000100" }));
+    await post(pebbleForm({ transcription: "second of two", recordedAt: "1700000000200" }));
+
+    const body = (await (await poll(since)).json()) as NotesBody;
+    const texts = body.notes.map((n) => n.transcription);
+    expect(texts).toContain("first of two");
+    expect(texts).toContain("second of two");
+  });
+
+  it("does not duplicate a note when the app retries a delivery", async () => {
+    mockGoogle();
+    const since = Date.now() - 1;
+    const form = () =>
+      pebbleForm({
+        audio: { filename: "rec-retry.m4a", content: "fake-audio-bytes", type: "audio/mp4" },
+        transcription: "retried note",
+        recordedAt: "1700000000300",
+      });
+    await post(form());
+    mockGoogle({ lookupExists: true });
+    await post(form());
+
+    const body = (await (await poll(since)).json()) as NotesBody;
+    expect(body.notes.filter((n) => n.key === "rec-retry")).toHaveLength(1);
+  });
+
+  it("never stores test events", async () => {
+    mockGoogle();
+    const since = Date.now() - 1;
+    await post(pebbleForm({ transcription: "canned feed test", recordedAt: "1700000000400" }), undefined, {
+      "X-Index-Test": "true",
+    });
+
+    const body = (await (await poll(since)).json()) as NotesBody;
+    expect(body.notes.map((n) => n.transcription)).not.toContain("canned feed test");
+  });
+
+  it("does not store a note when the Drive upload fails", async () => {
+    mockGoogle({ failUpload: true });
+    const since = Date.now() - 1;
+    const res = await post(pebbleForm({ transcription: "failed upload note", recordedAt: "1700000000500" }));
+    expect(res.status).toBe(502);
+
+    const body = (await (await poll(since)).json()) as NotesBody;
+    expect(body.notes.map((n) => n.transcription)).not.toContain("failed upload note");
+  });
+});
+
 async function sha256Hex(message: string): Promise<string> {
   const enc = new TextEncoder();
   const digest = await crypto.subtle.digest("SHA-256", enc.encode(message));
