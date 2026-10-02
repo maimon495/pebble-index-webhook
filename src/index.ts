@@ -11,11 +11,16 @@
  *   - 5xx on any persistence failure, so the app retries on the next recording
  *   - 401 on bad auth (constant-time comparison)
  *   - test events (X-Index-Test / test=true): 200, but never filed as a note
+ *
+ * Each persisted note is also copied into a short-lived KV feed that
+ * GET /notes serves to a poller (see src/notes.ts). That copy is best-effort:
+ * a KV failure never turns a successful Drive upload into a 5xx.
  */
 
 import { isAuthorized } from "./auth";
 import { recordingKey } from "./dedupe";
 import { driveFileExists, driveUpload, getAccessToken } from "./google";
+import { notesSince, storeNote, type StoredNote } from "./notes";
 
 export interface Env {
   /** Token the Pebble app sends in its Authorization header. */
@@ -28,6 +33,46 @@ export interface Env {
   GOOGLE_OAUTH_CLIENT_SECRET: string;
   /** Refresh token from the one-time authorization — see docs/google-drive-setup.md. */
   GOOGLE_OAUTH_REFRESH_TOKEN: string;
+  /**
+   * Recent-notes feed for GET /notes. Optional so the webhook keeps working
+   * if the binding is missing — notes just aren't added to the feed.
+   */
+  NOTES_KV?: KVNamespace;
+  /** Token a poller sends (Authorization: Bearer) to read GET /notes. Only GET /notes requires it. */
+  POLL_TOKEN?: string;
+}
+
+/** Best-effort copy into the KV feed; logs and swallows failures (Drive is the source of truth). */
+async function addToFeed(env: Env, note: StoredNote): Promise<void> {
+  if (!env.NOTES_KV) return;
+  try {
+    await storeNote(env.NOTES_KV, note);
+  } catch (err) {
+    console.log(JSON.stringify({ event: "feed_store_failed", key: note.key, error: (err as Error).message }));
+  }
+}
+
+async function handleNotes(request: Request, env: Env, url: URL): Promise<Response> {
+  if (request.method !== "GET") {
+    return json(405, { ok: false, error: "method not allowed; GET /notes" });
+  }
+  if (!env.POLL_TOKEN || !env.NOTES_KV) {
+    return json(500, { ok: false, error: "worker misconfigured: missing POLL_TOKEN or NOTES_KV" });
+  }
+  if (!isAuthorized(request.headers.get("Authorization"), env.POLL_TOKEN)) {
+    return json(401, { ok: false, error: "unauthorized" });
+  }
+  const sinceRaw = url.searchParams.get("since") ?? "0";
+  if (!/^\d+$/.test(sinceRaw)) {
+    return json(400, { ok: false, error: "since must be a millisecond timestamp (the cursor from the last poll)" });
+  }
+
+  const page = await notesSince(env.NOTES_KV, Number(sinceRaw));
+  // Never log transcription contents; counts only.
+  console.log(JSON.stringify({ event: "notes_polled", returned: page.notes.length, more: page.more }));
+  const res = json(200, { ok: true, ...page });
+  res.headers.set("Cache-Control", "no-store");
+  return res;
 }
 
 // Far above any real voice memo (~1KB/min of speech), bounds what a leaked
@@ -73,9 +118,12 @@ for their own use. It is not offered to the public.</p>
 own Pebble Index 01 ring/app, and writes them directly to that same
 individual's own Google Drive, using a Google OAuth grant that individual
 gave to their own Google Cloud project. No data is shared with, sold to, or
-processed by any third party. No data is retained by this service itself —
-each request is written to Drive and the request is discarded; nothing is
-logged except an event name, a non-reversible dedupe key, and timing, never
+processed by any third party. Each note is written to Drive; the audio is
+then discarded. The transcription and Drive filenames of each note are also
+kept in this service's own storage for up to 7 days, readable only by that
+same individual (with a private token), so their own assistant can pick up
+new notes; after 7 days they are deleted automatically. Nothing is logged
+except an event name, a non-reversible dedupe key, counts, and timing, never
 the transcription or audio content (see the source at the project's git
 repository).</p>`;
 
@@ -100,6 +148,9 @@ export default {
     }
     if (url.pathname === "/health") {
       return json(200, { ok: true });
+    }
+    if (url.pathname === "/notes") {
+      return handleNotes(request, env, url);
     }
     if (url.pathname !== "/index-webhook") {
       return json(404, { ok: false, error: "not found" });
@@ -165,6 +216,14 @@ export default {
     const textName = `${base}.txt`;
 
     const started = Date.now();
+    const note: StoredNote = {
+      key,
+      recordedAtMs,
+      receivedAt: started,
+      transcription,
+      audioName: audioFile ? audioName : null,
+      textName: transcription ? textName : null,
+    };
     try {
       const accessToken = await getAccessToken({
         client_id: env.GOOGLE_OAUTH_CLIENT_ID,
@@ -177,6 +236,8 @@ export default {
       const primaryName = audioFile ? audioName : textName;
       if (await driveFileExists(accessToken, env.DRIVE_FOLDER_ID, primaryName)) {
         console.log(JSON.stringify({ event: "already_persisted", key, ms: Date.now() - started }));
+        // Covers a first delivery whose Drive upload succeeded but feed write failed.
+        await addToFeed(env, note);
         return json(200, { ok: true, deduped: true });
       }
 
@@ -191,6 +252,7 @@ export default {
 
       // Never log transcription contents; status + latency only.
       console.log(JSON.stringify({ event: "persisted", key, ms: Date.now() - started }));
+      await addToFeed(env, note);
       return json(200, { ok: true });
     } catch (err) {
       console.log(
